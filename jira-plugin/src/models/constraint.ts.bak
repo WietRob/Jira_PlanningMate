@@ -1,0 +1,418 @@
+import { Issue, Constraint, Violation, Assignment, ConstraintSystem } from '../models/types';
+
+export class ConstraintSystemImpl implements ConstraintSystem {
+  hardConstraints: Constraint[] = [];
+  softConstraints: Constraint[] = [];
+
+  constructor(hardConstraints: Constraint[] = [], softConstraints: Constraint[] = []) {
+    this.hardConstraints = hardConstraints;
+    this.softConstraints = softConstraints;
+  }
+
+  addHardConstraint(constraint: Constraint): void {
+    this.hardConstraints.push(constraint);
+  }
+
+  addSoftConstraint(constraint: Constraint): void {
+    this.softConstraints.push(constraint);
+  }
+
+  removeConstraint(id: string): void {
+    this.hardConstraints = this.hardConstraints.filter(c => c.id !== id);
+    this.softConstraints = this.softConstraints.filter(c => c.id !== id);
+  }
+
+  getApplicableConstraints(issue: Issue): Constraint[] {
+    const applicable: Constraint[] = [];
+    const allConstraints = [...this.hardConstraints, ...this.softConstraints];
+    
+    for (const constraint of allConstraints) {
+      if (!constraint.enabled) continue;
+      
+      const applicableTypes = constraint.parameters['issueTypes'] as string[] | undefined;
+      const excludedTypes = constraint.parameters['excludedTypes'] as string[] | undefined;
+      
+      if (applicableTypes && !applicableTypes.includes(issue.issueType)) continue;
+      if (excludedTypes && excludedTypes.includes(issue.issueType)) continue;
+      
+      const applicableLabels = constraint.parameters['requiredLabels'] as string[] | undefined;
+      if (applicableLabels) {
+        const hasAllLabels = applicableLabels.every(label => 
+          issue.labels?.includes(label) ?? false
+        );
+        if (!hasAllLabels) continue;
+      }
+      
+      applicable.push(constraint);
+    }
+    
+    return applicable;
+  }
+
+  evaluateHardConstraints(issue: Issue, assignment: Assignment): Violation[] {
+    const violations: Violation[] = [];
+    
+    for (const constraint of this.hardConstraints) {
+      if (!constraint.enabled) continue;
+      
+      const violation = this.evaluateSingleConstraint(constraint, issue, assignment);
+      if (violation) {
+        violations.push(violation);
+      }
+    }
+    
+    return violations;
+  }
+
+  evaluateSoftConstraints(issue: Issue, assignment: Assignment): number {
+    let totalPenalty = 0;
+    
+    for (const constraint of this.softConstraints) {
+      if (!constraint.enabled) continue;
+      
+      const violation = this.evaluateSingleConstraint(constraint, issue, assignment);
+      if (violation) {
+        totalPenalty += constraint.weight || 1;
+      }
+    }
+    
+    return totalPenalty;
+  }
+
+  private evaluateSingleConstraint(
+    constraint: Constraint,
+    issue: Issue,
+    assignment: Assignment
+  ): Violation | null {
+    switch (constraint.category) {
+      case 'CAPACITY':
+        return this.evaluateCapacityConstraint(constraint, issue, assignment);
+      
+      case 'DEADLINE':
+        return this.evaluateDeadlineConstraint(constraint, issue, assignment);
+      
+      case 'TEAM':
+        return this.evaluateTeamConstraint(constraint, issue, assignment);
+      
+      case 'SKILL':
+        return this.evaluateSkillConstraint(constraint, issue, assignment);
+      
+      case 'WORKLOAD':
+        return this.evaluateWorkloadConstraint(constraint, issue, assignment);
+      
+      case 'DEPENDENCY':
+        return this.evaluateDependencyConstraint(constraint, issue, assignment);
+      
+      default:
+        return null;
+    }
+  }
+
+  private evaluateCapacityConstraint(
+    constraint: Constraint,
+    issue: Issue,
+    assignment: Assignment
+  ): Violation | null {
+    const maxCapacity = constraint.parameters['maxCapacity'] as number || 100;
+    const teamCapacities = constraint.parameters['teamCapacities'] as Record<string, number> | undefined;
+    
+    const estimate = issue.estimate || 0;
+    
+    // If team-specific capacities are provided, check those
+    if (teamCapacities && assignment.teamId) {
+      const teamCapacity = teamCapacities[assignment.teamId] || maxCapacity;
+      
+      if (estimate > teamCapacity) {
+        return {
+          constraintId: constraint.id,
+          constraintType: 'HARD',
+          issueId: issue.id,
+          issueKey: issue.key,
+          message: `Issue estimate (${estimate}h) exceeds team capacity (${teamCapacity}h)`,
+          severity: 'CRITICAL',
+          affectedAssignments: [assignment.teamId],
+          repairSuggestions: [
+            'Split the issue into smaller pieces',
+            'Reduce scope of the issue',
+            'Add more team members',
+            'Extend timeline'
+          ]
+        };
+      }
+    }
+    
+    // Otherwise check against global maxCapacity
+    if (estimate > maxCapacity) {
+      return {
+        constraintId: constraint.id,
+        constraintType: 'HARD',
+        issueId: issue.id,
+        issueKey: issue.key,
+        message: `Issue estimate (${estimate}h) exceeds maximum capacity (${maxCapacity}h)`,
+        severity: 'CRITICAL',
+        affectedAssignments: [assignment.teamId],
+        repairSuggestions: [
+          'Split the issue into smaller pieces',
+          'Reduce scope of the issue',
+          'Add more team members',
+          'Extend timeline'
+        ]
+      };
+    }
+    
+    return null;
+  }
+
+  private evaluateDeadlineConstraint(
+    constraint: Constraint,
+    issue: Issue,
+    assignment: Assignment
+  ): Violation | null {
+    const strictDeadlines = constraint.parameters['strictDeadlines'] as boolean || false;
+    const deadlineField = constraint.parameters['deadlineField'] as string || 'dueDate';
+    
+    if (issue.dueDate && assignment.endDate) {
+      const dueDate = new Date(issue.dueDate);
+      const endDate = new Date(assignment.endDate);
+      
+      if (endDate > dueDate) {
+        return {
+          constraintId: constraint.id,
+          constraintType: constraint.type,
+          issueId: issue.id,
+          issueKey: issue.key,
+          message: `Assignment end date (${assignment.endDate}) exceeds deadline (${issue.dueDate})`,
+          severity: strictDeadlines ? 'CRITICAL' : 'MEDIUM',
+          affectedAssignments: [assignment.teamId],
+          repairSuggestions: [
+            'Move issue to earlier iteration',
+            'Reduce issue scope',
+            'Request deadline extension',
+            'Reassign to team with more capacity'
+          ]
+        };
+      }
+    }
+    
+    return null;
+  }
+
+  private evaluateTeamConstraint(
+    constraint: Constraint,
+    issue: Issue,
+    assignment: Assignment
+  ): Violation | null {
+    const allowedTeams = constraint.parameters['allowedTeams'] as string[];
+    const excludedTeams = constraint.parameters['excludedTeams'] as string[];
+    const requiredTeams = constraint.parameters['requiredTeams'] as string[];
+    
+    if (allowedTeams && !allowedTeams.includes(assignment.teamId)) {
+      return {
+        constraintId: constraint.id,
+        constraintType: 'HARD',
+        issueId: issue.id,
+        issueKey: issue.key,
+        message: `Team ${assignment.teamId} is not in allowed teams list`,
+        severity: 'HIGH',
+        affectedAssignments: [assignment.teamId],
+        repairSuggestions: [
+          'Reassign to an allowed team',
+          'Add team to allowed list',
+          'Remove team restriction'
+        ]
+      };
+    }
+    
+    if (excludedTeams && excludedTeams.includes(assignment.teamId)) {
+      return {
+        constraintId: constraint.id,
+        constraintType: 'HARD',
+        issueId: issue.id,
+        issueKey: issue.key,
+        message: `Team ${assignment.teamId} is explicitly excluded`,
+        severity: 'HIGH',
+        affectedAssignments: [assignment.teamId],
+        repairSuggestions: [
+          'Reassign to a non-excluded team',
+          'Remove team from exclusion list'
+        ]
+      };
+    }
+    
+    if (requiredTeams && requiredTeams.length > 0) {
+      const hasRequired = requiredTeams.includes(assignment.teamId);
+      if (!hasRequired) {
+        return {
+          constraintId: constraint.id,
+          constraintType: 'HARD',
+          issueId: issue.id,
+          issueKey: issue.key,
+          message: `Issue requires team from: ${requiredTeams.join(', ')}`,
+          severity: 'MEDIUM',
+          affectedAssignments: [assignment.teamId],
+          repairSuggestions: [
+            `Reassign to one of: ${requiredTeams.join(', ')}`,
+            'Add cross-team collaboration'
+          ]
+        };
+      }
+    }
+    
+    return null;
+  }
+
+  private evaluateSkillConstraint(
+    constraint: Constraint,
+    issue: Issue,
+    assignment: Assignment
+  ): Violation | null {
+    const requiredSkills = constraint.parameters['requiredSkills'] as string[];
+    const skillField = constraint.parameters['skillField'] as string || 'components';
+    
+    if (requiredSkills && requiredSkills.length > 0) {
+      const issueSkills = (issue as any)[skillField] || [];
+      const missingSkills = requiredSkills.filter(skill => !issueSkills.includes(skill));
+      
+      if (missingSkills.length > 0) {
+        return {
+          constraintId: constraint.id,
+          constraintType: constraint.type,
+          issueId: issue.id,
+          issueKey: issue.key,
+          message: `Issue missing required skills: ${missingSkills.join(', ')}`,
+          severity: constraint.type === 'HARD' ? 'HIGH' : 'MEDIUM',
+          affectedAssignments: [assignment.teamId],
+          repairSuggestions: [
+            'Add required skills to issue',
+            'Reassign to team with required skills',
+            'Provide skill training',
+            'Reduce scope to exclude skill requirement'
+          ]
+        };
+      }
+    }
+    
+    return null;
+  }
+
+  private evaluateWorkloadConstraint(
+    constraint: Constraint,
+    issue: Issue,
+    assignment: Assignment
+  ): Violation | null {
+    const maxWorkload = constraint.parameters['maxWorkload'] as number || 100;
+    const workloadField = constraint.parameters['workloadField'] as string || 'storyPoints';
+    
+    const workload = (issue as any)[workloadField] || 0;
+    
+    if (workload > maxWorkload) {
+      return {
+        constraintId: constraint.id,
+        constraintType: constraint.type,
+        issueId: issue.id,
+        issueKey: issue.key,
+        message: `Workload (${workload}) exceeds maximum (${maxWorkload})`,
+        severity: 'MEDIUM',
+        affectedAssignments: [assignment.teamId],
+        repairSuggestions: [
+          'Split issue into smaller pieces',
+          'Reduce story points',
+          'Extend timeline'
+        ]
+      };
+    }
+    
+    return null;
+  }
+
+  private evaluateDependencyConstraint(
+    constraint: Constraint,
+    issue: Issue,
+    assignment: Assignment
+  ): Violation | null {
+    const blockTypes = constraint.parameters['blockTypes'] as string[] || ['blocks'];
+    const strictOrder = constraint.parameters['strictOrder'] as boolean || false;
+    
+    for (const linked of issue.linkedIssues) {
+      if (blockTypes.includes(linked.type) && linked.inward === false) {
+        const violation = {
+          constraintId: constraint.id,
+          constraintType: constraint.type,
+          issueId: issue.id,
+          issueKey: issue.key,
+          message: `Issue has dependency link: ${issue.key} → ${linked.key}`,
+          severity: strictOrder ? 'HIGH' : 'MEDIUM',
+          affectedAssignments: [assignment.teamId, linked.id],
+          repairSuggestions: [
+            'Ensure dependent issue is scheduled first',
+            'Remove blocking relationship if not critical'
+          ]
+        };
+        
+        return violation;
+      }
+    }
+    
+    return null;
+  }
+}
+
+export function createDefaultConstraints(): ConstraintSystemImpl {
+  const system = new ConstraintSystemImpl();
+  
+  system.addHardConstraint({
+    id: 'hard-capacity-001',
+    type: 'HARD',
+    category: 'CAPACITY',
+    description: 'Team capacity cannot be exceeded',
+    enabled: true,
+    parameters: { maxCapacity: 160 }
+  });
+  
+  system.addHardConstraint({
+    id: 'hard-dependency-001',
+    type: 'HARD',
+    category: 'DEPENDENCY',
+    description: 'Dependency cycles are not allowed',
+    enabled: true,
+    parameters: { blockTypes: ['blocks', 'is blocked by'] }
+  });
+  
+  system.addHardConstraint({
+    id: 'hard-deadline-001',
+    type: 'HARD',
+    category: 'DEADLINE',
+    description: 'Critical deadlines must be met',
+    enabled: true,
+    parameters: { 
+      strictDeadlines: true,
+      deadlineField: 'dueDate',
+      priorityThreshold: 'Highest'
+    }
+  });
+  
+  system.addSoftConstraint({
+    id: 'soft-skill-001',
+    type: 'SOFT',
+    category: 'SKILL',
+    description: 'Prefer teams with matching skills',
+    weight: 2,
+    enabled: true,
+    parameters: { 
+      skillField: 'components',
+      preferredMatch: true 
+    }
+  });
+  
+  system.addSoftConstraint({
+    id: 'soft-workload-001',
+    type: 'SOFT',
+    category: 'WORKLOAD',
+    description: 'Balance workload across teams',
+    weight: 1,
+    enabled: true,
+    parameters: { maxWorkload: 40, workloadField: 'storyPoints' }
+  });
+  
+  return system;
+}

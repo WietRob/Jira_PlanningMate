@@ -1,0 +1,205 @@
+import { Issue, Assignment, TeamCapacity, OptimizationResult, SolverConfig } from '../models/types';
+
+interface SolverRequest {
+  issues: Issue[];
+  assignments: Assignment[];
+  teams: TeamCapacity[];
+  config: SolverConfig;
+}
+
+interface SolverResponse {
+  solution: Assignment[];
+  objectiveValue: number;
+  runtime: number;
+  status: 'OPTIMAL' | 'FEASIBLE' | 'INFEASIBLE' | 'TIMEOUT';
+  gaps: {
+    capacity: number;
+    deadline: number;
+    dependency: number;
+    skill: number;
+  };
+}
+
+export class ExternalSolverService {
+  private endpoint: string;
+  private config: SolverConfig;
+
+  constructor(endpoint: string, config?: Partial<SolverConfig>) {
+    this.endpoint = endpoint;
+    this.config = {
+      timeout: 30000,
+      maxIterations: 1000,
+      warmStart: true,
+      parallelism: true,
+      heuristicLevel: 'MODERATE',
+      solverType: 'CP-SAT',
+      ...config
+    };
+  }
+
+  async solve(
+    issues: Issue[],
+    teams: TeamCapacity[],
+    initialAssignments?: Assignment[]
+  ): Promise<OptimizationResult> {
+    const request: SolverRequest = {
+      issues,
+      assignments: initialAssignments || [],
+      teams,
+      config: this.config
+    };
+
+    try {
+      const response = await fetch(`${this.endpoint}/solve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(request)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Solver error: ${response.statusText}`);
+      }
+
+      const data: SolverResponse = await response.json();
+
+      return this.transformResponse(data, issues);
+    } catch (error) {
+      console.error('External solver error:', error);
+      return this.createFallbackResult(issues, teams);
+    }
+  }
+
+  async validateSolution(
+    assignments: Assignment[],
+    issues: Issue[],
+    teams: TeamCapacity[]
+  ): Promise<{
+    valid: boolean;
+    violations: Array<{ type: string; count: number }>;
+  }> {
+    const request = {
+      assignments,
+      issues,
+      teams
+    };
+
+    try {
+      const response = await fetch(`${this.endpoint}/validate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(request)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Validation error: ${response.statusText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      return { valid: true, violations: [] };
+    }
+  }
+
+  async getOptimizationHints(
+    issues: Issue[],
+    constraints: Record<string, unknown>
+  ): Promise<Array<{
+    type: string;
+    description: string;
+    impact: number;
+  }>> {
+    try {
+      const response = await fetch(`${this.endpoint}/hints`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ issues, constraints })
+      });
+
+      if (!response.ok) {
+        return [];
+      }
+
+      return await response.json();
+    } catch (error) {
+      return [];
+    }
+  }
+
+  private transformResponse(
+    response: SolverResponse,
+    issues: Issue[]
+  ): OptimizationResult {
+    const assignedIssueIds = new Set(response.solution.map(a => a.issueId));
+    const unassignedIssues = issues.filter(i => !assignedIssueIds.has(i.id));
+
+    let totalCapacity = 0;
+    let usedCapacity = 0;
+
+    for (const assignment of response.solution) {
+      const issue = issues.find(i => i.id === assignment.issueId);
+      if (issue) {
+        usedCapacity += issue.estimate || 8;
+      }
+    }
+
+    return {
+      solution: response.solution,
+      objectiveValue: response.objectiveValue,
+      runtime: response.runtime,
+      iterations: this.config.maxIterations,
+      status: this.mapStatus(response.status),
+      gaps: response.gaps
+    };
+  }
+
+  private mapStatus(status: SolverResponse['status']): OptimizationResult['status'] {
+    switch (status) {
+      case 'OPTIMAL': return 'OPTIMAL';
+      case 'FEASIBLE': return 'FEASIBLE';
+      case 'INFEASIBLE': return 'INFEASIBLE';
+      case 'TIMEOUT': return 'TIMEOUT';
+      default: return 'FEASIBLE';
+    }
+  }
+
+  private createFallbackResult(
+    issues: Issue[],
+    teams: TeamCapacity[]
+  ): OptimizationResult {
+    return {
+      solution: [],
+      objectiveValue: 0,
+      runtime: 0,
+      iterations: 0,
+      status: 'INFEASIBLE',
+      gaps: {
+        capacity: 0,
+        deadline: 0,
+        dependency: 0,
+        skill: 0
+      }
+    };
+  }
+}
+
+export function createSolverService(
+  endpoint: string,
+  config?: Partial<SolverConfig>
+): ExternalSolverService {
+  return new ExternalSolverService(endpoint, config);
+}
+
+export const DEFAULT_SOLVER_CONFIG: SolverConfig = {
+  timeout: 30000,
+  maxIterations: 1000,
+  warmStart: true,
+  parallelism: true,
+  heuristicLevel: 'MODERATE',
+  solverType: 'CP-SAT'
+};

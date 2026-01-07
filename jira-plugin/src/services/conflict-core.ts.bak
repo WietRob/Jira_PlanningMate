@@ -1,0 +1,260 @@
+import { Issue, Violation, Constraint, TeamCapacity, ConflictInfo } from '../models/types';
+import { DependencyGraph, buildDependencyGraph, getAncestors, getDescendants } from './dependency';
+
+export class ConflictCoreExtractor {
+  private issues: Issue[];
+  private graph: DependencyGraph;
+  private constraints: Constraint[];
+  private teams: TeamCapacity[];
+
+  constructor(
+    issues: Issue[],
+    graph: DependencyGraph,
+    constraints: ConstraintSystem,
+    teams: TeamCapacity[]
+  ) {
+    this.issues = issues;
+    this.graph = graph;
+    this.constraints = [...constraints.hardConstraints, ...constraints.softConstraints];
+    this.teams = teams;
+  }
+
+  extract(violations: Violation[]): ConflictInfo[] {
+    if (violations.length === 0) return [];
+    
+    const conflictCore: ConflictInfo[] = [];
+    
+    const violationsByType = this.groupViolationsByType(violations);
+    
+    for (const [type, typeViolations] of violationsByType) {
+      const core = this.extractMinimalConflictSet(type, typeViolations);
+      conflictCore.push(...core);
+    }
+    
+    const capacityConflicts = this.extractCapacityConflicts(violations);
+    conflictCore.push(...capacityConflicts);
+    
+    const deadlineConflicts = this.extractDeadlineConflicts(violations);
+    conflictCore.push(...deadlineConflicts);
+    
+    return this.prioritizeConflicts(conflictCore);
+  }
+
+  private groupViolationsByType(violations: Violation[]): Map<string, Violation[]> {
+    const grouped = new Map<string, Violation[]>();
+    
+    for (const violation of violations) {
+      const existing = grouped.get(violation.constraintId) || [];
+      existing.push(violation);
+      grouped.set(violation.constraintId, existing);
+    }
+    
+    return grouped;
+  }
+
+  private extractMinimalConflictSet(
+    type: string,
+    violations: Violation[]
+  ): ConflictInfo[] {
+    if (violations.length === 0) return [];
+    
+    const issueToViolations = new Map<string, Violation[]>();
+    for (const v of violations) {
+      const existing = issueToViolations.get(v.issueId) || [];
+      existing.push(v);
+      issueToViolations.set(v.issueId, existing);
+    }
+    
+    const coreIssues = Array.from(issueToViolations.keys());
+    
+    if (coreIssues.length <= this.config.minimalSetThreshold) {
+      return [{
+        id: `conflict-${type}-${Date.now()}`,
+        type: this.mapConstraintToConflictType(type),
+        issues: coreIssues,
+        message: this.generateMessage(type, coreIssues),
+        severity: this.calculateSeverity(violations),
+        affectedConstraints: [type],
+        minimalSet: true
+      }];
+    }
+    
+    const minimalSet = this.findMinimalHittingSet(issueToViolations);
+    
+    return [{
+      id: `conflict-${type}-${Date.now()}`,
+      type: this.mapConstraintToConflictType(type),
+      issues: minimalSet,
+      message: this.generateMessage(type, minimalSet),
+      severity: this.calculateSeverity(violations),
+      affectedConstraints: [type],
+      minimalSet: true
+    }];
+  }
+
+  private findMinimalHittingSet(
+    issueToViolations: Map<string, Violation[]>
+  ): string[] {
+    const issues = Array.from(issueToViolations.keys());
+    const allViolations = new Set<string>();
+    issueToViolations.forEach(vs => vs.forEach(v => allViolations.add(v.id)));
+    
+    let bestSet: string[] = [];
+    let bestSize = issues.length + 1;
+    
+    const combinations = this.generateCombinations(issues);
+    
+    for (const combo of combinations) {
+      if (combo.length >= bestSize) continue;
+      
+      const coveredViolations = new Set<string>();
+      for (const issueId of combo) {
+        const violations = issueToViolations.get(issueId);
+        if (violations) {
+          violations.forEach(v => coveredViolations.add(v.id));
+        }
+      }
+      
+      if (coveredViolations.size === allViolations.size) {
+        bestSet = combo;
+        bestSize = combo.length;
+      }
+    }
+    
+    return bestSet.length > 0 ? bestSet : issues.slice(0, 3);
+  }
+
+  private generateCombinations<T>(items: T[]): T[][] {
+    const result: T[][] = [];
+    
+    const generate = (start: number, current: T[]) => {
+      result.push([...current]);
+      
+      for (let i = start; i < items.length; i++) {
+        current.push(items[i]);
+        generate(i + 1, current);
+        current.pop();
+      }
+    };
+    
+    generate(0, []);
+    
+    return result.sort((a, b) => a.length - b.length);
+  }
+
+  private extractCapacityConflicts(violations: Violation[]): ConflictInfo[] {
+    const capacityViolations = violations.filter(
+      v => v.constraintId.includes('capacity')
+    );
+    
+    if (capacityViolations.length === 0) return [];
+    
+    const teamViolations = new Map<string, Violation[]>();
+    for (const v of capacityViolations) {
+      for (const teamId of v.affectedAssignments) {
+        const existing = teamViolations.get(teamId) || [];
+        existing.push(v);
+        teamViolations.set(teamId, existing);
+      }
+    }
+    
+    const conflicts: ConflictInfo[] = [];
+    
+    for (const [teamId, teamVios] of teamViolations) {
+      const issueIds = [...new Set(teamVios.map(v => v.issueId))];
+      
+      conflicts.push({
+        id: `conflict-capacity-${teamId}-${Date.now()}`,
+        type: 'CAPACITY',
+        issues: issueIds,
+        message: `Team capacity exceeded for ${teamVios.length} issue(s) in team ${teamId}`,
+        severity: this.calculateSeverity(teamVios),
+        affectedConstraints: ['capacity-overflow'],
+        minimalSet: true
+      });
+    }
+    
+    return conflicts;
+  }
+
+  private extractDeadlineConflicts(violations: Violation[]): ConflictInfo[] {
+    const deadlineViolations = violations.filter(
+      v => v.constraintId.includes('deadline') || v.message.includes('deadline')
+    );
+    
+    if (deadlineViolations.length === 0) return [];
+    
+    const issueIds = [...new Set(deadlineViolations.map(v => v.issueId))];
+    
+    return [{
+      id: `conflict-deadline-${Date.now()}`,
+      type: 'DEADLINE',
+      issues: issueIds,
+      message: `${deadlineViolations.length} issue(s) violate deadline constraints`,
+      severity: 'CRITICAL',
+      affectedConstraints: ['deadline-constraint'],
+      minimalSet: true
+    }];
+  }
+
+  private mapConstraintToConflictType(constraintId: string): ConflictInfo['type'] {
+    if (constraintId.includes('capacity')) return 'CAPACITY';
+    if (constraintId.includes('deadline')) return 'DEADLINE';
+    if (constraintId.includes('dependency')) return 'DEPENDENCY';
+    if (constraintId.includes('skill')) return 'SKILL';
+    if (constraintId.includes('workload')) return 'WORKLOAD';
+    return 'WORKLOAD';
+  }
+
+  private generateMessage(type: string, issues: string[]): string {
+    const issueCount = issues.length;
+    const issueLabel = issueCount === 1 ? 'issue' : 'issues';
+    
+    switch (type) {
+      case 'hard-capacity-001':
+        return `${issueCount} ${issueLabel} exceed team capacity constraints`;
+      case 'hard-dependency-001':
+        return `${issueCount} ${issueLabel} have unresolved dependency conflicts`;
+      case 'hard-deadline-001':
+        return `${issueCount} ${issueLabel} cannot meet deadline requirements`;
+      default:
+        return `${issueCount} ${issueLabel} violate ${type} constraints`;
+    }
+  }
+
+  private calculateSeverity(violations: Violation[]): ConflictInfo['severity'] {
+    const hasCritical = violations.some(v => v.severity === 'CRITICAL');
+    const hasHigh = violations.some(v => v.severity === 'HIGH');
+    
+    if (hasCritical) return 'CRITICAL';
+    if (hasHigh) return 'HIGH';
+    if (violations.length > 5) return 'MEDIUM';
+    return 'LOW';
+  }
+
+  private prioritizeConflicts(conflicts: ConflictInfo[]): ConflictInfo[] {
+    const severityOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+    
+    return conflicts.sort((a, b) => {
+      const severityDiff = severityOrder[a.severity] - severityOrder[b.severity];
+      if (severityDiff !== 0) return severityDiff;
+      
+      return a.issues.length - b.issues.length;
+    });
+  }
+
+  private config = {
+    minimalSetThreshold: 10
+  };
+}
+
+export function extractConflictCore(
+  issues: Issue[],
+  violations: Violation[],
+  constraints: ConstraintSystem,
+  teams: TeamCapacity[]
+): ConflictInfo[] {
+  const graph = buildDependencyGraph(issues);
+  const extractor = new ConflictCoreExtractor(issues, graph, constraints, teams);
+  return extractor.extract(violations);
+}

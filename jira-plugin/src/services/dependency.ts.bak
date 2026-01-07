@@ -1,0 +1,233 @@
+import { Issue } from '../types';
+
+export interface DependencyGraph {
+  nodes: Map<string, Issue>;
+  edges: Map<string, string[]>;
+  reverseEdges: Map<string, string[]>;
+}
+
+export function buildDependencyGraph(issues: Issue[]): DependencyGraph {
+  const nodes = new Map<string, Issue>();
+  const edges = new Map<string, string[]>();
+  const reverseEdges = new Map<string, string[]>();
+  
+  for (const issue of issues) {
+    nodes.set(issue.id, issue);
+    edges.set(issue.id, []);
+    reverseEdges.set(issue.id, []);
+  }
+  
+  for (const issue of issues) {
+    for (const linked of issue.linkedIssues) {
+      if (nodes.has(linked.id)) {
+        // When inward=false, "issue" is blocked by "linked"
+        // So "linked" must be scheduled before "issue"
+        // Edge: linked -> issue (linked is predecessor, issue is successor)
+        const currentEdges = edges.get(linked.id) || [];
+        currentEdges.push(issue.id);
+        edges.set(linked.id, currentEdges);
+        
+        // Reverse edge: issue has predecessor linked
+        const currentReverse = reverseEdges.get(issue.id) || [];
+        currentReverse.push(linked.id);
+        reverseEdges.set(issue.id, currentReverse);
+      }
+    }
+  }
+  
+  return { nodes, edges, reverseEdges };
+}
+
+export function detectCycles(graph: DependencyGraph): string[][] {
+  const cycles: string[][] = [];
+  const visited = new Set<string>();
+  const recursionStack = new Set<string>();
+  const currentPath: string[] = [];
+  
+  function dfs(nodeId: string): void {
+    if (recursionStack.has(nodeId)) {
+      const cycleStart = currentPath.indexOf(nodeId);
+      const cycle = currentPath.slice(cycleStart);
+      cycles.push(cycle);
+      return;
+    }
+    
+    if (visited.has(nodeId)) return;
+    
+    visited.add(nodeId);
+    recursionStack.add(nodeId);
+    currentPath.push(nodeId);
+    
+    const edges = graph.edges.get(nodeId) || [];
+    for (const neighbor of edges) {
+      dfs(neighbor);
+    }
+    
+    currentPath.pop();
+    recursionStack.delete(nodeId);
+  }
+  
+  for (const nodeId of graph.nodes.keys()) {
+    if (!visited.has(nodeId)) {
+      dfs(nodeId);
+    }
+  }
+  
+  return cycles;
+}
+
+export function TopologicalSort(graph: DependencyGraph): string[] {
+  const inDegree = new Map<string, number>();
+  const queue: string[] = [];
+  const result: string[] = [];
+  
+  for (const nodeId of graph.nodes.keys()) {
+    const edges = graph.reverseEdges.get(nodeId) || [];
+    inDegree.set(nodeId, edges.length);
+    
+    if (edges.length === 0) {
+      queue.push(nodeId);
+    }
+  }
+  
+  while (queue.length > 0) {
+    const nodeId = queue.shift()!;
+    result.push(nodeId);
+    
+    const outgoingEdges = graph.edges.get(nodeId) || [];
+    for (const neighbor of outgoingEdges) {
+      const currentInDegree = inDegree.get(neighbor) || 0;
+      const newInDegree = currentInDegree - 1;
+      inDegree.set(neighbor, newInDegree);
+      
+      if (newInDegree === 0) {
+        queue.push(neighbor);
+      }
+    }
+  }
+  
+  if (result.length !== graph.nodes.size) {
+    return [];
+  }
+  
+  return result;
+}
+
+export function getCriticalPath(graph: DependencyGraph, iterations: number): string[] {
+  const sorted = TopologicalSort(graph);
+  if (sorted.length === 0) return [];
+  
+  const longestPath: Map<string, { path: string[]; length: number }> = new Map();
+  
+  for (const nodeId of sorted) {
+    const edges = graph.edges.get(nodeId) || [];
+    
+    if (edges.length === 0) {
+      longestPath.set(nodeId, { path: [nodeId], length: 1 });
+    } else {
+      let maxLength = 0;
+      let bestPath: string[] = [];
+      
+      for (const neighbor of edges) {
+        const neighborPath = longestPath.get(neighbor);
+        if (neighborPath && neighborPath.length > maxLength) {
+          maxLength = neighborPath.length;
+          bestPath = neighborPath;
+        }
+      }
+      
+      longestPath.set(nodeId, {
+        path: [nodeId, ...bestPath],
+        length: maxLength + 1
+      });
+    }
+  }
+  
+  let maxLength = 0;
+  let criticalPath: string[] = [];
+  
+  for (const { path, length } of longestPath.values()) {
+    if (length > maxLength) {
+      maxLength = length;
+      criticalPath = path;
+    }
+  }
+  
+  return criticalPath;
+}
+
+export function calculateDepths(graph: DependencyGraph): Map<string, number> {
+  const depths = new Map<string, number>();
+  const sorted = TopologicalSort(graph);
+  
+  for (const nodeId of sorted) {
+    const edges = graph.edges.get(nodeId) || [];
+    
+    if (edges.length === 0) {
+      depths.set(nodeId, 0);
+    } else {
+      let maxDepth = 0;
+      for (const neighbor of edges) {
+        const neighborDepth = depths.get(neighbor) || 0;
+        maxDepth = Math.max(maxDepth, neighborDepth + 1);
+      }
+      depths.set(nodeId, maxDepth);
+    }
+  }
+  
+  return depths;
+}
+
+export function findBottlenecks(
+  graph: DependencyGraph,
+  threshold: number = 3
+): string[] {
+  const bottlenecks: string[] = [];
+  const reverseEdges = graph.reverseEdges;
+  
+  for (const [nodeId, predecessors] of reverseEdges) {
+    if (predecessors.length >= threshold) {
+      bottlenecks.push(nodeId);
+    }
+  }
+  
+  return bottlenecks;
+}
+
+export function getAncestors(graph: DependencyGraph, nodeId: string): Set<string> {
+  const ancestors = new Set<string>();
+  const queue = [nodeId];
+  
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const predecessors = graph.reverseEdges.get(current) || [];
+    
+    for (const pred of predecessors) {
+      if (!ancestors.has(pred)) {
+        ancestors.add(pred);
+        queue.push(pred);
+      }
+    }
+  }
+  
+  return ancestors;
+}
+
+export function getDescendants(graph: DependencyGraph, nodeId: string): Set<string> {
+  const descendants = new Set<string>();
+  const queue = [nodeId];
+  
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const successors = graph.edges.get(current) || [];
+    
+    for (const succ of successors) {
+      if (!descendants.has(succ)) {
+        descendants.add(succ);
+        queue.push(succ);
+      }
+    }
+  }
+  
+  return descendants;
+}

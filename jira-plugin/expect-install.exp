@@ -1,0 +1,10 @@
+#!/usr/bin/env expect
+set timeout 60
+spawn forge install -s robertoschmidt.atlassian.net -p jira --confirm-scopes
+expect {
+    "Are you sure you want to proceed?" {
+        send "y\r"
+        exp_continue
+    }
+    eof
+}

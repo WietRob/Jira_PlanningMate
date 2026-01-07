@@ -1,0 +1,211 @@
+import { Issue, TeamCapacity, DataQualityMetrics, DataQualityBlocker } from '../models/types';
+
+export function calculateTeamCapacities(
+  teams: string[],
+  iterations: number,
+  baseCapacity: number = 160
+): TeamCapacity[] {
+  return teams.map((teamName, index) => ({
+    teamId: `team-${index + 1}`,
+    teamName,
+    iterations: Array.from({ length: iterations }, (_, i) => ({
+      iteration: i + 1,
+      capacity: baseCapacity,
+      planned: 0,
+      available: baseCapacity,
+      holidays: 8,
+      absences: 0
+    }))
+  }));
+}
+
+export function validateDataQuality(issues: Issue[]): {
+  totalIssues: number;
+  issuesWithoutEstimate: number[];
+  issuesWithoutAssignee: number[];
+  issuesWithoutDependencies: string[];
+  issuesWithoutComponents: string[];
+  qualityScore: number;
+  blockers: DataQualityBlocker[];
+} {
+  const issuesWithoutEstimate: number[] = [];
+  const issuesWithoutAssignee: number[] = [];
+  const issuesWithoutDependencies: string[] = [];
+  const issuesWithoutComponents: string[] = [];
+  
+  for (const issue of issues) {
+    if (!issue.estimate || issue.estimate === 0) {
+      issuesWithoutEstimate.push(issue.id);
+    }
+    
+    if (!issue.assignee) {
+      issuesWithoutAssignee.push(issue.id);
+    }
+    
+    const hasBlockingDeps = issue.linkedIssues.some(
+      l => l.type === 'blocks' && !l.inward
+    );
+    const hasBlockingReceived = issue.linkedIssues.some(
+      l => l.type === 'is blocked by' && l.inward
+    );
+    if (!hasBlockingDeps && !hasBlockingReceived && issue.issueType !== 'Epic') {
+      issuesWithoutDependencies.push(issue.key);
+    }
+    
+    if (!issue.components || issue.components.length === 0) {
+      issuesWithoutComponents.push(issue.key);
+    }
+  }
+  
+  const total = issues.length;
+  const estimateScore = total > 0 
+    ? ((total - issuesWithoutEstimate.length) / total) * 100 
+    : 100;
+  const assigneeScore = total > 0 
+    ? ((total - issuesWithoutAssignee.length) / total) * 100 
+    : 100;
+  const dependencyScore = total > 0 
+    ? ((total - issuesWithoutDependencies.length) / total) * 100 
+    : 100;
+  const componentScore = total > 0 
+    ? ((total - issuesWithoutComponents.length) / total) * 100 
+    : 100;
+  
+  const qualityScore = (estimateScore * 0.3 + assigneeScore * 0.2 + 
+    dependencyScore * 0.3 + componentScore * 0.2);
+  
+  const blockers: DataQualityBlocker[] = [];
+  
+  if (issuesWithoutEstimate.length > 0) {
+    blockers.push({
+      category: 'Missing Estimates',
+      count: issuesWithoutEstimate.length,
+      percentage: Math.round((issuesWithoutEstimate.length / total) * 100),
+      severity: issuesWithoutEstimate.length / total > 0.3 ? 'HIGH' : 'MEDIUM',
+      affectedIssues: issuesWithoutEstimate,
+      recommendations: [
+        'Add story points or time estimates to issues',
+        'Use historical velocity data for estimation',
+        'Consider planning poker sessions'
+      ]
+    });
+  }
+  
+  if (issuesWithoutAssignee.length > 0) {
+    blockers.push({
+      category: 'Unassigned Issues',
+      count: issuesWithoutAssignee.length,
+      percentage: Math.round((issuesWithoutAssignee.length / total) * 100),
+      severity: issuesWithoutAssignee.length / total > 0.2 ? 'HIGH' : 'MEDIUM',
+      affectedIssues: issuesWithoutAssignee,
+      recommendations: [
+        'Assign issues during planning',
+        'Set up default assignees for components',
+        'Review assignment process with team'
+      ]
+    });
+  }
+  
+  if (issuesWithoutDependencies.length > 0) {
+    blockers.push({
+      category: 'Missing Dependencies',
+      count: issuesWithoutDependencies.length,
+      percentage: Math.round((issuesWithoutDependencies.length / total) * 100),
+      severity: 'MEDIUM',
+      affectedIssues: issuesWithoutDependencies,
+      recommendations: [
+        'Add "blocks" links for dependent work',
+        'Review epic-stories relationships',
+        'Use component dependencies as proxy'
+      ]
+    });
+  }
+  
+  if (issuesWithoutComponents.length > 0) {
+    blockers.push({
+      category: 'Missing Components',
+      count: issuesWithoutComponents.length,
+      percentage: Math.round((issuesWithoutComponents.length / total) * 100),
+      severity: issuesWithoutComponents.length / total > 0.4 ? 'HIGH' : 'LOW',
+      affectedIssues: issuesWithoutComponents,
+      recommendations: [
+        'Add components to categorize work',
+        'Use components for skill-based assignment',
+        'Review component taxonomy'
+      ]
+    });
+  }
+  
+  return {
+    totalIssues: total,
+    issuesWithoutEstimate,
+    issuesWithoutAssignee,
+    issuesWithoutDependencies,
+    issuesWithoutComponents,
+    qualityScore: Math.round(qualityScore),
+    blockers
+  };
+}
+
+export function calculateEstimate(
+  issues: Issue[],
+  defaultEstimate: number = 8
+): number {
+  let totalEstimate = 0;
+  
+  for (const issue of issues) {
+    if (issue.estimate) {
+      totalEstimate += issue.estimate;
+    } else if (issue.storyPoints) {
+      totalEstimate += issue.storyPoints * 8;
+    } else {
+      totalEstimate += defaultEstimate;
+    }
+  }
+  
+  return totalEstimate;
+}
+
+export function calculateVelocity(
+  historicalSprints: { completedPoints: number }[]
+): number {
+  if (historicalSprints.length === 0) return 40;
+  
+  const completedPoints = historicalSprints.map(s => s.completedPoints);
+  const sum = completedPoints.reduce((a, b) => a + b, 0);
+  const average = sum / completedPoints.length;
+  
+  return Math.round(average);
+}
+
+export function generateTeamCapacityFromSprints(
+  sprints: any[],
+  teamMembers: number = 5
+): TeamCapacity[] {
+  return sprints.map((sprint, index) => ({
+    teamId: `team-${index + 1}`,
+    teamName: `Iteration ${sprint.name || index + 1}`,
+    iterations: [{
+      iteration: 1,
+      capacity: teamMembers * 80,
+      planned: 0,
+      available: teamMembers * 80,
+      holidays: 8,
+      absences: 8
+    }]
+  }));
+}
+
+export function getIterationDateRange(
+  startDate: Date,
+  iteration: number,
+  iterationLength: number = 14
+): { start: Date; end: Date } {
+  const iterStart = new Date(startDate);
+  iterStart.setDate(iterStart.getDate() + (iteration - 1) * iterationLength);
+  
+  const iterEnd = new Date(iterStart);
+  iterEnd.setDate(iterEnd.getDate() + iterationLength - 1);
+  
+  return { start: iterStart, end: iterEnd };
+}

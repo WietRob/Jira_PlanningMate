@@ -1,0 +1,22 @@
+app:
+  id: ari:cloud:ecosystem::app/93d5f2bb-9931-445a-b59d-910eab95b0e3
+  runtime:
+    name: nodejs20.x
+
+modules:
+  jira:globalPage:
+    - key: planning-mate
+      title: Jira Planning Mate
+      function: ui
+
+  function:
+    - key: ui
+      handler: index.handler
+
+  webtrigger:
+    - key: ui-trigger
+      function: ui
+
+permissions:
+  scopes:
+    - read:jira-work

@@ -1,0 +1,184 @@
+import { Issue, User, LinkedIssue, Sprint } from '../models/types';
+
+interface JiraAPIResponse<T> {
+  data: T;
+  success: boolean;
+  error?: string;
+}
+
+export async function fetchIssuesByJQL(jql: string): Promise<Issue[]> {
+  const response = await fetch(`/rest/api/3/search?jql=${encodeURIComponent(jql)}&maxResults=100`);
+  const data = await response.json() as JiraAPIResponse<any>;
+  
+  if (!data.success) {
+    throw new Error(data.error || 'Failed to fetch issues');
+  }
+  
+  return transformJiraIssues(data.data.issues);
+}
+
+export async function fetchProjectIssues(projectKey: string): Promise<Issue[]> {
+  const jql = `project = ${projectKey} AND type IN (Epic, Story, Bug, Task, Sub-task) ORDER BY rank ASC`;
+  return fetchIssuesByJQL(jql);
+}
+
+export async function fetchSprintIssues(sprintId: number): Promise<Issue[]> {
+  const response = await fetch(`/rest/api/3/sprint/${sprintId}/issue`);
+  const data = await response.json() as JiraAPIResponse<any>;
+  
+  if (!data.success) {
+    throw new Error(data.error || 'Failed to fetch sprint issues');
+  }
+  
+  return transformJiraIssues(data.data.issues);
+}
+
+export async function fetchIssueDetails(issueKey: string): Promise<Issue> {
+  const response = await fetch(`/rest/api/3/issue/${issueKey}`);
+  const data = await response.json() as JiraAPIResponse<any>;
+  
+  if (!data.success) {
+    throw new Error(data.error || 'Failed to fetch issue details');
+  }
+  
+  return transformJiraIssue(data.data);
+}
+
+export async function fetchProjectUsers(projectKey: string): Promise<User[]> {
+  const response = await fetch(`/rest/api/3/project/${projectKey}/users`);
+  const data = await response.json() as JiraAPIResponse<any>;
+  
+  if (!data.success) {
+    throw new Error(data.error || 'Failed to fetch project users');
+  }
+  
+  return data.data.map(transformJiraUser);
+}
+
+export async function fetchBoards(): Promise<Board[]> {
+  const response = await fetch('/rest/agile/1.0/board');
+  const data = await response.json() as JiraAPIResponse<any>;
+  
+  if (!data.success) {
+    throw new Error(data.error || 'Failed to fetch boards');
+  }
+  
+  return data.data.values;
+}
+
+export async function fetchSprints(boardId: number): Promise<Sprint[]> {
+  const response = await fetch(`/rest/agile/1.0/board/${boardId}/sprint`);
+  const data = await response.json() as JiraAPIResponse<any>;
+  
+  if (!data.success) {
+    throw new Error(data.error || 'Failed to fetch sprints');
+  }
+  
+  return data.data.values;
+}
+
+function transformJiraIssues(jiraIssues: any[]): Issue[] {
+  return jiraIssues.map(transformJiraIssue);
+}
+
+function transformJiraIssue(jiraIssue: any): Issue {
+  const fields = jiraIssue.fields;
+  
+  return {
+    id: jiraIssue.id,
+    key: jiraIssue.key,
+    summary: fields.summary,
+    description: fields.description,
+    issueType: fields.issuetype?.name || 'Task',
+    status: fields.status?.name || 'Unknown',
+    priority: fields.priority?.name || 'Medium',
+    assignee: fields.assignee ? transformJiraUser(fields.assignee) : undefined,
+    reporter: transformJiraUser(fields.reporter),
+    created: fields.created,
+    updated: fields.updated,
+    dueDate: fields.duedate,
+    storyPoints: fields.customfield_10016,
+    estimate: fields.timetracking?.originalEstimate 
+      ? parseDuration(fields.timetracking.originalEstimate)
+      : undefined,
+    components: fields.components?.map((c: any) => c.name) || [],
+    labels: fields.labels || [],
+    fixVersion: fields.fixVersions?.[0]?.name,
+    linkedIssues: transformLinkedIssues(fields.issuelinks, jiraIssue.key),
+    customFields: extractCustomFields(fields)
+  };
+}
+
+function transformJiraUser(jiraUser: any): User {
+  return {
+    accountId: jiraUser.accountId,
+    displayName: jiraUser.displayName,
+    emailAddress: jiraUser.emailAddress,
+    avatarUrl: jiraUser.avatarUrls?.['48x48'],
+    teams: [],
+    skills: [],
+    capacity: 160
+  };
+}
+
+function transformLinkedIssues(links: any[], selfKey: string): LinkedIssue[] {
+  if (!links) return [];
+  
+  return links.map(link => {
+    const isInward = !!link.inwardIssue;
+    const issue = isInward ? link.inwardIssue : link.outwardIssue;
+    
+    let type = 'relates to';
+    if (link.type.name === 'Blocks') {
+      type = isInward ? 'is blocked by' : 'blocks';
+    } else if (link.type.name === 'Duplicate') {
+      type = isInward ? 'is duplicated by' : 'duplicates';
+    } else if (link.type.name === 'Cloners') {
+      type = 'clone';
+    }
+    
+    return {
+      id: issue.id,
+      key: issue.key,
+      type,
+      inward: isInward
+    };
+  });
+}
+
+function parseDuration(duration: string): number {
+  if (!duration) return 0;
+  
+  const match = duration.match(/(\d+)([hdw])/);
+  if (!match) return 0;
+  
+  const value = parseInt(match[1], 10);
+  const unit = match[2];
+  
+  switch (unit) {
+    case 'h': return value;
+    case 'd': return value * 8;
+    case 'w': return value * 40;
+    default: return value;
+  }
+}
+
+function extractCustomFields(fields: any): Record<string, unknown> {
+  const customFields: Record<string, unknown> = {};
+  const customFieldPrefix = 'customfield_';
+  
+  for (const [key, value] of Object.entries(fields)) {
+    if (key.startsWith(customFieldPrefix) && value !== null && value !== undefined) {
+      customFields[key] = value;
+    }
+  }
+  
+  return customFields;
+}
+
+interface Board {
+  id: number;
+  name: string;
+  type: string;
+  projectKey: string;
+}

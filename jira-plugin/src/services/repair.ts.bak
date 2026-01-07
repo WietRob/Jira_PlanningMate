@@ -1,0 +1,336 @@
+import { Issue, ConflictInfo, RepairAction, Constraint } from '../models/types';
+import { DependencyGraph, buildDependencyGraph, getAncestors, getDescendants } from './dependency';
+
+export class RepairActionGenerator {
+  private issues: Issue[];
+  private graph: DependencyGraph;
+  private constraints: Constraint[];
+
+  constructor(
+    issues: Issue[],
+    graph: DependencyGraph,
+    constraints: ConstraintSystem
+  ) {
+    this.issues = issues;
+    this.graph = graph;
+    this.constraints = [...constraints.hardConstraints, ...constraints.softConstraints];
+  }
+
+  generate(conflicts: ConflictInfo[]): RepairAction[] {
+    const actions: RepairAction[] = [];
+    
+    for (const conflict of conflicts) {
+      const conflictActions = this.generateForConflict(conflict);
+      actions.push(...conflictActions);
+    }
+    
+    return this.prioritizeActions(actions);
+  }
+
+  private generateForConflict(conflict: ConflictInfo): RepairAction[] {
+    switch (conflict.type) {
+      case 'CAPACITY':
+        return this.generateCapacityRepairs(conflict);
+      case 'DEADLINE':
+        return this.generateDeadlineRepairs(conflict);
+      case 'DEPENDENCY':
+        return this.generateDependencyRepairs(conflict);
+      case 'CYCLE':
+        return this.generateCycleRepairs(conflict);
+      case 'SKILL':
+        return this.generateSkillRepairs(conflict);
+      case 'WORKLOAD':
+        return this.generateWorkloadRepairs(conflict);
+      default:
+        return this.generateGenericRepairs(conflict);
+    }
+  }
+
+  private generateCapacityRepairs(conflict: ConflictInfo): RepairAction[] {
+    const actions: RepairAction[] = [];
+    
+    for (const issueId of conflict.issues) {
+      const issue = this.issues.find(i => i.id === issueId);
+      if (!issue) continue;
+      
+      actions.push({
+        id: `repair-reschedule-${issueId}-${Date.now()}`,
+        type: 'RESCHEDULE',
+        description: `Reschedule "${issue.key}" to a later iteration`,
+        targetIssue: issueId,
+        parameters: {
+          newIteration: this.findNextAvailableIteration(issue)
+        },
+        expectedImpact: {
+          violationsResolved: 1,
+          newViolations: 0,
+          feasibilityChange: 'IMPROVES'
+        },
+        priority: this.calculatePriority(issue),
+        automated: false
+      });
+      
+      actions.push({
+        id: `repair-reassign-${issueId}-${Date.now()}`,
+        type: 'REASSIGN',
+        description: `Reassign "${issue.key}" to a team with more capacity`,
+        targetIssue: issueId,
+        parameters: {},
+        expectedImpact: {
+          violationsResolved: 1,
+          newViolations: 0,
+          feasibilityChange: 'IMPROVES'
+        },
+        priority: this.calculatePriority(issue),
+        automated: false
+      });
+      
+      if ((issue.estimate || 0) > 16) {
+        actions.push({
+          id: `repair-split-${issueId}-${Date.now()}`,
+          type: 'SPLIT',
+          description: `Split "${issue.key}" into smaller issues`,
+          targetIssue: issueId,
+          parameters: {
+            newEstimate: Math.ceil((issue.estimate || 8) / 2)
+          },
+          expectedImpact: {
+            violationsResolved: 1,
+            newViolations: 0,
+            feasibilityChange: 'IMPROVES'
+          },
+          priority: this.calculatePriority(issue),
+          automated: false
+        });
+      }
+    }
+    
+    return actions;
+  }
+
+  private generateDeadlineRepairs(conflict: ConflictInfo): RepairAction[] {
+    const actions: RepairAction[] = [];
+    
+    for (const issueId of conflict.issues) {
+      const issue = this.issues.find(i => i.id === issueId);
+      if (!issue) continue;
+      
+      actions.push({
+        id: `repair-reschedule-early-${issueId}-${Date.now()}`,
+        type: 'RESCHEDULE',
+        description: `Move "${issue.key}" to an earlier iteration to meet deadline`,
+        targetIssue: issueId,
+        parameters: {
+          newIteration: this.findEarlierIteration(issue)
+        },
+        expectedImpact: {
+          violationsResolved: 1,
+          newViolations: 0,
+          feasibilityChange: 'IMPROVES'
+        },
+        priority: 1,
+        automated: false
+      });
+      
+      if (issue.priority !== 'Highest') {
+        actions.push({
+          id: `repair-reduce-scope-${issueId}-${Date.now()}`,
+          type: 'DROP',
+          description: `Reduce scope of "${issue.key}" to meet deadline`,
+          targetIssue: issueId,
+          parameters: {},
+        expectedImpact: {
+          violationsResolved: 1,
+          newViolations: 0,
+          feasibilityChange: 'IMPROVES'
+        },
+          priority: 2,
+          automated: false
+        });
+      }
+    }
+    
+    return actions;
+  }
+
+  private generateDependencyRepairs(conflict: ConflictInfo): RepairAction[] {
+    const actions: RepairAction[] = [];
+    
+    for (const issueId of conflict.issues) {
+      const issue = this.issues.find(i => i.id === issueId);
+      if (!issue) continue;
+      
+      for (const linked of issue.linkedIssues) {
+        if (linked.type === 'blocks' && !linked.inward) {
+          actions.push({
+            id: `repair-remove-dep-${issueId}-${linked.id}-${Date.now()}`,
+            type: 'REMOVE_DEPENDENCY',
+            description: `Remove blocking relationship: "${issue.key}" → "${linked.key}"`,
+            targetIssue: issueId,
+            sourceIssue: linked.id,
+            parameters: {
+              removedDependency: linked.id
+            },
+            expectedImpact: {
+              violationsResolved: 1,
+              newViolations: 0,
+              feasibilityChange: 'IMPROVES'
+            },
+            priority: this.calculatePriority(issue),
+            automated: false
+          });
+        }
+      }
+    }
+    
+    return actions;
+  }
+
+  private generateCycleRepairs(conflict: ConflictInfo): RepairAction[] {
+    const actions: RepairAction[] = [];
+    const cycle = conflict.issues;
+    
+    if (cycle.length >= 2) {
+      for (let i = 0; i < cycle.length - 1; i++) {
+        const issueId = cycle[i];
+        const nextIssueId = cycle[i + 1];
+        const issue = this.issues.find(j => j.id === issueId);
+        const nextIssue = this.issues.find(j => j.id === nextIssueId);
+        
+        if (!issue || !nextIssue) continue;
+        
+        actions.push({
+          id: `repair-break-cycle-${issueId}-${nextIssueId}-${Date.now()}`,
+          type: 'REMOVE_DEPENDENCY',
+          description: `Break cycle by removing: "${issue.key}" blocks "${nextIssue.key}"`,
+          targetIssue: issueId,
+          sourceIssue: nextIssueId,
+          parameters: {
+            removedDependency: nextIssueId
+          },
+          expectedImpact: {
+            violationsResolved: cycle.length,
+            newViolations: 0,
+            feasibilityChange: 'IMPROVES'
+          },
+          priority: 1,
+          automated: false
+        });
+      }
+    }
+    
+    return actions;
+  }
+
+  private generateSkillRepairs(conflict: ConflictInfo): RepairAction[] {
+    const actions: RepairAction[] = [];
+    
+    for (const issueId of conflict.issues) {
+      const issue = this.issues.find(i => i.id === issueId);
+      if (!issue) continue;
+      
+      actions.push({
+        id: `repair-reassign-skilled-${issueId}-${Date.now()}`,
+        type: 'REASSIGN',
+        description: `Reassign "${issue.key}" to a team with required skills`,
+        targetIssue: issueId,
+        parameters: {},
+        expectedImpact: {
+          violationsResolved: 1,
+          newViolations: 0,
+          feasibilityChange: 'IMPROVES'
+        },
+        priority: this.calculatePriority(issue),
+        automated: false
+      });
+    }
+    
+    return actions;
+  }
+
+  private generateWorkloadRepairs(conflict: ConflictInfo): RepairAction[] {
+    const actions: RepairAction[] = [];
+    
+    for (const issueId of conflict.issues) {
+      const issue = this.issues.find(i => i.id === issueId);
+      if (!issue) continue;
+      
+      actions.push({
+        id: `repair-reduce-estimate-${issueId}-${Date.now()}`,
+        type: 'ADJUST_ESTIMATE',
+        description: `Reduce estimate for "${issue.key}" to balance workload`,
+        targetIssue: issueId,
+        parameters: {
+          newEstimate: Math.max(1, Math.floor((issue.estimate || 8) * 0.7))
+        },
+        expectedImpact: {
+          violationsResolved: 1,
+          newViolations: 0,
+          feasibilityChange: 'IMPROVES'
+        },
+        priority: this.calculatePriority(issue),
+        automated: false
+      });
+    }
+    
+    return actions;
+  }
+
+  private generateGenericRepairs(conflict: ConflictInfo): RepairAction[] {
+    return conflict.issues.map(issueId => ({
+      id: `repair-generic-${issueId}-${Date.now()}`,
+      type: 'RESCHEDULE' as const,
+      description: `Review and adjust assignment for issue ${issueId}`,
+      targetIssue: issueId,
+      parameters: {},
+      expectedImpact: {
+        violationsResolved: 1,
+        newViolations: 0,
+        feasibilityChange: 'IMPROVES'
+      },
+      priority: 3,
+      automated: false
+    }));
+  }
+
+  private findNextAvailableIteration(issue: Issue): number {
+    return 2;
+  }
+
+  private findEarlierIteration(issue: Issue): number {
+    return 1;
+  }
+
+  private calculatePriority(issue: Issue): number {
+    if (issue.priority === 'Highest') return 1;
+    if (issue.priority === 'High') return 2;
+    if (issue.priority === 'Medium') return 3;
+    return 4;
+  }
+
+  private prioritizeActions(actions: RepairAction[]): RepairAction[] {
+    return actions.sort((a, b) => {
+      if (a.priority !== b.priority) {
+        return a.priority - b.priority;
+      }
+      
+      const impactOrder = { IMPROVES: 0, NO_CHANGE: 1, DEGRADES: 2 };
+      const impactDiff = 
+        impactOrder[a.expectedImpact.feasibilityChange] - 
+        impactOrder[b.expectedImpact.feasibilityChange];
+      if (impactDiff !== 0) return impactDiff;
+      
+      return a.expectedImpact.violationsResolved - b.expectedImpact.violationsResolved;
+    });
+  }
+}
+
+export function generateRepairActions(
+  issues: Issue[],
+  conflicts: ConflictInfo[],
+  constraints: ConstraintSystem
+): RepairAction[] {
+  const graph = buildDependencyGraph(issues);
+  const generator = new RepairActionGenerator(issues, graph, constraints);
+  return generator.generate(conflicts);
+}

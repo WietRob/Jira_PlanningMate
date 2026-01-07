@@ -1,0 +1,31 @@
+{
+  "name": "jira-planning-mate",
+  "version": "1.0.0",
+  "description": "AI-powered PI Planning with Feasibility Certificate and Conflict Resolution",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:report": "playwright show-report",
+    "test:install": "playwright install --with-deps chromium",
+    "auth:record": "npx playwright codegen https://robertoschmidt.atlassian.net --save-storage=playwright/.auth/state.json",
+    "auth:encode": "base64 playwright/.auth/state.json",
+    "forge:lint": "cd jira-plugin && forge lint",
+    "forge:deploy": "cd jira-plugin && forge deploy",
+    "forge:install": "cd jira-plugin && forge install",
+    "forge:logs": "cd jira-plugin && forge logs",
+    "forge:tunnel": "cd jira-plugin && forge tunnel",
+    "build": "cd jira-plugin && npm run build",
+    "build:functions": "cd jira-plugin && npm run build:functions",
+    "build:ui": "cd jira-plugin && npm run build:ui"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.28.5",
+    "@babel/preset-env": "^7.28.5",
+    "@babel/preset-typescript": "^7.28.5",
+    "@playwright/test": "^1.57.0",
+    "@types/jest": "^30.0.0",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.6"
+  }
+}

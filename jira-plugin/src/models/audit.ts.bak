@@ -1,0 +1,147 @@
+import { Issue, TeamCapacity, ConstraintSystem, PlanSnapshot, AuditEntry } from '../types';
+
+export class AuditTrail {
+  private entries: AuditEntry[] = [];
+
+  createEntry(
+    action: AuditEntry['action'],
+    userId: string,
+    details: Record<string, unknown>,
+    previousState?: string,
+    newState?: string
+  ): AuditEntry {
+    const entry: AuditEntry = {
+      id: this.generateId(),
+      timestamp: new Date().toISOString(),
+      action,
+      userId,
+      details,
+      previousState,
+      newState
+    };
+    
+    this.entries.push(entry);
+    return entry;
+  }
+
+  async createSnapshot(
+    projectKey: string,
+    issues: Issue[],
+    teams: TeamCapacity[],
+    constraints: ConstraintSystem
+  ): Promise<PlanSnapshot> {
+    const snapshot: PlanSnapshot = {
+      id: this.generateId(),
+      timestamp: new Date().toISOString(),
+      projectKey,
+      scopeIssues: issues.map(i => i.id),
+      teamCapacities: teams,
+      constraintSnapshot: {
+        hardConstraints: constraints.hardConstraints?.map(c => c.id) || [],
+        softConstraints: constraints.softConstraints?.map(c => c.id) || []
+      },
+      analysisResult: {
+        feasible: true,
+        violations: 0,
+        confidence: 1.0
+      },
+      metadata: {
+        jiraBaseUrl: '',
+        jiraVersion: '',
+        pluginVersion: '1.0.0'
+      }
+    };
+    
+    this.createEntry('CREATE', 'system', {
+      snapshotId: snapshot.id,
+      projectKey,
+      issueCount: issues.length,
+      teamCount: teams.length
+    });
+    
+    return snapshot;
+  }
+
+  getEntries(filter?: Partial<AuditEntry>): AuditEntry[] {
+    let filtered = [...this.entries];
+    
+    if (filter?.action) {
+      filtered = filtered.filter(e => e.action === filter.action);
+    }
+    if (filter?.userId) {
+      filtered = filtered.filter(e => e.userId === filter.userId);
+    }
+    
+    return filtered.sort((a, b) => 
+      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+  }
+
+  private generateId(): string {
+    const timestamp = Date.now().toString(36);
+    const random = Math.random().toString(36).substring(2, 9);
+    return `snap-${timestamp}-${random}`;
+  }
+}
+
+export class PlanSnapshotManager {
+  private snapshots: Map<string, PlanSnapshot> = new Map();
+
+  async saveSnapshot(snapshot: PlanSnapshot): Promise<void> {
+    this.snapshots.set(snapshot.id, snapshot);
+  }
+
+  async getSnapshot(id: string): Promise<PlanSnapshot | null> {
+    return this.snapshots.get(id) || null;
+  }
+
+  async listSnapshots(projectKey?: string): Promise<PlanSnapshot[]> {
+    let snapshots = Array.from(this.snapshots.values());
+    
+    if (projectKey) {
+      snapshots = snapshots.filter(s => s.projectKey === projectKey);
+    }
+    
+    return snapshots.sort((a, b) => 
+      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+  }
+
+  async deleteSnapshot(id: string): Promise<boolean> {
+    return this.snapshots.delete(id);
+  }
+
+  async compareSnapshots(
+    id1: string,
+    id2: string
+  ): Promise<{
+    added: string[];
+    removed: string[];
+    changed: { issueId: string; field: string; old: unknown; new: unknown }[];
+  } | null> {
+    const snap1 = await this.getSnapshot(id1);
+    const snap2 = await this.getSnapshot(id2);
+    
+    if (!snap1 || !snap2) return null;
+    
+    const added = snap2.scopeIssues.filter(id => !snap1.scopeIssues.includes(id));
+    const removed = snap1.scopeIssues.filter(id => !snap2.scopeIssues.includes(id));
+    const changed: { issueId: string; field: string; old: unknown; new: unknown }[] = [];
+    
+    return { added, removed, changed };
+  }
+}
+
+export function createAuditEntry(
+  action: AuditEntry['action'],
+  userId: string,
+  details: Record<string, unknown>
+): AuditEntry {
+  return {
+    id: `audit-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 9)}`,
+    timestamp: new Date().toISOString(),
+    action,
+    userId,
+    details
+  };
+}
