@@ -11,7 +11,7 @@ modules:
 
   function:
     - key: ui
-      handler: index.handler
+      handler: handler
 
   webtrigger:
     - key: ui-trigger

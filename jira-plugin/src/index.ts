@@ -1,5 +1,5 @@
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
 
 interface WebTriggerEvent {
   path: string;
@@ -8,7 +8,7 @@ interface WebTriggerEvent {
   body?: string;
 }
 
-exports.handler = async (event: WebTriggerEvent) => {
+export async function handler(event: WebTriggerEvent) {
   const baseDir = path.join(__dirname, 'static');
   
   let filename = 'index.html';
@@ -54,4 +54,4 @@ exports.handler = async (event: WebTriggerEvent) => {
   } catch (error) {
     return { status: 500, body: `Error: ${error instanceof Error ? error.message : 'Unknown'}` };
   }
-};
+}

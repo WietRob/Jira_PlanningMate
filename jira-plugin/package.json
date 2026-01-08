@@ -6,7 +6,7 @@
   "scripts": {
     "build": "npm run build:functions && npm run build:ui",
     "build:functions": "esbuild --bundle --outfile=dist/index.js --platform=node --target=node20 --external:@forge/manifest src/index.ts",
-    "build:ui": "cd ui && npm install --legacy-peer-deps && npm run build && rm -rf ../static/* && cp -r ui/dist/* ../static/",
+    "build:ui": "cd ui && npm install --legacy-peer-deps && npm run build && rm -rf ../static/* && cp -r dist/* ../static/",
     "test": "jest --passWithNoTests",
     "dev": "npm run build && forge tunnel --watch",
     "deploy": "npm run build && forge deploy",
