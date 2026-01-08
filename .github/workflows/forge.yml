@@ -35,11 +35,10 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install Forge CLI
-        run: npm install -g @forge/cli
+      - name: Configure Forge
+        run: |
+          npm install -g @forge/cli
+          echo "n" | forge settings analytics false || forge settings --no-analytics
 
       - name: Forge Lint
         run: forge lint --verbose
@@ -95,13 +94,12 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
+      - name: Configure Forge
+        run: |
+          npm install -g @forge/cli
+          forge settings analytics false || true
+
       - name: Install dependencies
-        run: npm ci
-
-      - name: Install Forge CLI
-        run: npm install -g @forge/cli
-
-      - name: Deploy to Forge
         run: forge deploy --environment=${{ env.FORGE_ENVIRONMENT }}
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
