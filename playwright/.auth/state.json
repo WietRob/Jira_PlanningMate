@@ -1,0 +1,140 @@
+{
+  "cookies": [
+    {
+      "name": "atlassian.account.ffs.id",
+      "value": "622fbe94-058a-4b0e-9753-d200064127a6",
+      "domain": "id.atlassian.com",
+      "path": "/",
+      "expires": 1799397008.04678,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "atlassian.account.xsrf.token",
+      "value": "3653a4af-0933-4c66-b67c-215902a7602c",
+      "domain": "id.atlassian.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "ajs_anonymous_id",
+      "value": "%2272e11853-4b7c-4d0e-9c4c-8403d15d2bab%22",
+      "domain": ".atlassian.com",
+      "path": "/",
+      "expires": 1799397008,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "__cuid",
+      "value": "ca0c93c6f7864e2f89a00820967b061d",
+      "domain": ".atlassian.com",
+      "path": "/",
+      "expires": 1802421008,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "__cuid",
+      "value": "ca0c93c6f7864e2f89a00820967b061d",
+      "domain": ".id.atlassian.com",
+      "path": "/",
+      "expires": 1802421008,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "g_state",
+      "value": "{\"i_l\":0,\"i_ll\":1767861009744,\"i_b\":\"qefDb4T2ef2p2QJNNHPQy3q0b488zunDdJjWRw7LGPU\",\"i_e\":{\"enable_itp_optimization\":0}}",
+      "domain": "id.atlassian.com",
+      "path": "/",
+      "expires": 1783413009,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "atlassian.account.code.verifier",
+      "value": "iFeQsku9kqK84XYMrRAYH710CzOl5MLLiFBEx_WUOmL4",
+      "domain": "id.atlassian.com",
+      "path": "/",
+      "expires": 1767864614.205812,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "__Host-GAPS",
+      "value": "1:gv_i54xBEr7uTXF3d-zkK9C_PfKFDQ:lPAMJmRLfXW8cZ8e",
+      "domain": "accounts.google.com",
+      "path": "/",
+      "expires": 1802421014.355171,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "OTZ",
+      "value": "8425950_52_52_123900_48_436380",
+      "domain": "accounts.google.com",
+      "path": "/",
+      "expires": 1770453017,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "__Secure-ENID",
+      "value": "30.SE=ReCAFQD6BzE-9cPaUwIpzFnZVaW4ieBVpOvuq523EfqvyJ1t0L28YD0gHT1mdJQS-Z__lQySE_qb0i5QMVBkARNPu1ZNkMl26xeBNxnPrnf3Hxnn05TyxFefJ7EF0GOQAMK2ltXiJ0OVAntYs7MUmfcJQ_UClto-_rjht_1aEDDRpmxCtZSeqRQhYbIsrmvnpwMtoLcjPGM",
+      "domain": ".google.com",
+      "path": "/",
+      "expires": 1802047725.335495,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "https://id.atlassian.com",
+      "localStorage": [
+        {
+          "name": "statsig.session_id.3569395337",
+          "value": "{\"sessionID\":\"203a44ca-00be-4bf9-bd3a-67fabe845f45\",\"startTime\":1767861009012,\"lastUpdate\":1767861014471}"
+        },
+        {
+          "name": "__cuid",
+          "value": "ca0c93c6f7864e2f89a00820967b061d"
+        },
+        {
+          "name": "awc.session.expiry",
+          "value": "1767862808052"
+        },
+        {
+          "name": "ajs_anonymous_id",
+          "value": "\"72e11853-4b7c-4d0e-9c4c-8403d15d2bab\""
+        },
+        {
+          "name": "awc.session.id",
+          "value": "1767861008052"
+        }
+      ]
+    },
+    {
+      "origin": "https://www.recaptcha.net",
+      "localStorage": [
+        {
+          "name": "rc::a",
+          "value": "ZnJyNGE0MTN2ZjQ3MQ=="
+        }
+      ]
+    }
+  ]
+}
