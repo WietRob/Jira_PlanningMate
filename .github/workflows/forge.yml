@@ -39,10 +39,13 @@ jobs:
         run: npm ci
 
       - name: Install Forge CLI
-        run: npm install -g @forge/cli
+        run: |
+          npm install -g @forge/cli
+          mkdir -p ~/.config/forge
+          echo '{"analytics": false}' > ~/.config/forge/config.json
 
       - name: Forge Lint
-        run: echo "n" | forge lint --verbose
+        run: forge lint --verbose
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
@@ -98,16 +101,19 @@ jobs:
         run: npm ci
 
       - name: Install Forge CLI
-        run: npm install -g @forge/cli
+        run: |
+          npm install -g @forge/cli
+          mkdir -p ~/.config/forge
+          echo '{"analytics": false}' > ~/.config/forge/config.json
 
       - name: Deploy to Forge
-        run: echo "n" | forge deploy --environment=${{ env.FORGE_ENVIRONMENT }}
+        run: forge deploy --environment=${{ env.FORGE_ENVIRONMENT }}
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
 
       - name: Upgrade Installation
-        run: echo "n" | forge install --upgrade all --environment=${{ env.FORGE_ENVIRONMENT }}
+        run: forge install --upgrade all --environment=${{ env.FORGE_ENVIRONMENT }}
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
@@ -174,7 +180,10 @@ jobs:
           cache: 'npm'
 
       - name: Install Forge CLI
-        run: npm install -g @forge/cli
+        run: |
+          npm install -g @forge/cli
+          mkdir -p ~/.config/forge
+          echo '{"analytics": false}' > ~/.config/forge/config.json
 
       - name: Check Recent Logs
         run: |
