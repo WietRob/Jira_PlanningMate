@@ -94,24 +94,25 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
-      - name: Configure Forge
-        run: |
-          npm install -g @forge/cli
-          forge settings analytics false || true
-
       - name: Install dependencies
+        run: npm ci
+
+      - name: Install Forge CLI
+        run: npm install -g @forge/cli
+
+      - name: Deploy to Forge
         run: forge deploy --environment=${{ env.FORGE_ENVIRONMENT }}
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-          FORGE_ANALYTICS_OPT_IN: 'false'
+          FORGE_DISABLE_INTERACTION: 'true'
 
       - name: Upgrade Installation
         run: forge install --upgrade all --environment=${{ env.FORGE_ENVIRONMENT }}
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-          FORGE_ANALYTICS_OPT_IN: 'false'
+          FORGE_DISABLE_INTERACTION: 'true'
 
   test:
     name: Playwright Tests
@@ -184,7 +185,7 @@ jobs:
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-          FORGE_ANALYTICS_OPT_IN: 'false'
+          FORGE_DISABLE_INTERACTION: 'true'
         continue-on-error: true
 
       - name: Check for Errors
@@ -200,7 +201,7 @@ jobs:
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
-          FORGE_ANALYTICS_OPT_IN: 'false'
+          FORGE_DISABLE_INTERACTION: 'true'
 
   cleanup:
     name: Cleanup
