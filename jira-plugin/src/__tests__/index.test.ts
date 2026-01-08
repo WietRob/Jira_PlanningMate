@@ -111,7 +111,7 @@ describe('Constraint System', () => {
     const assignment = { issueId: '1', teamId: 'team-1', iteration: 1 };
     const violations = constraints.evaluateHardConstraints(issue, assignment);
     
-    expect(violations.some(v => v.constraintId === 'hard-capacity-001')).toBe(true);
+    expect(violations.some((v: any) => v.constraintId === 'hard-capacity-001')).toBe(true);
   });
 });
 
@@ -194,7 +194,7 @@ describe('Feasibility Engine', () => {
     // Should be infeasible because issue estimate (50) exceeds maxCapacity (40)
     expect(result.feasible).toBe(false);
     expect(result.violations.length).toBeGreaterThan(0);
-    expect(result.violations.some(v => v.constraintId === 'hard-capacity-001')).toBe(true);
+    expect(result.violations.some((v: any) => v.constraintId === 'hard-capacity-001')).toBe(true);
   });
 });
 
@@ -270,7 +270,7 @@ describe('Repair Action Generator', () => {
     const actions = generator.generate(conflicts);
     
     expect(actions.length).toBeGreaterThan(0);
-    expect(actions.some(a => a.type === 'RESCHEDULE')).toBe(true);
+    expect(actions.some((a: any) => a.type === 'RESCHEDULE')).toBe(true);
   });
 
   test('generates remove dependency for cycle conflicts', () => {
@@ -303,7 +303,7 @@ describe('Repair Action Generator', () => {
     const generator = new RepairActionGenerator(cyclicIssues, graph, constraints);
     const actions = generator.generate(conflicts);
     
-    expect(actions.some(a => a.type === 'REMOVE_DEPENDENCY')).toBe(true);
+    expect(actions.some((a: any) => a.type === 'REMOVE_DEPENDENCY')).toBe(true);
   });
 });
 
