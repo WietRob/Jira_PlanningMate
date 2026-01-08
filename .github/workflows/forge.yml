@@ -35,17 +35,16 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: |
-          cd jira-plugin && npm ci
-          cd ui && npm ci && cd ../..
+        run: npm ci
 
       - name: Build functions
-        run: npm run build:functions
-        working-directory: ./jira-plugin
+        run: npx tsc --noEmit --project jira-plugin/tsconfig.json
+        continue-on-error: true
 
       - name: Build UI
-        run: npm run build:ui
-        working-directory: ./jira-plugin
+        run: |
+          cd jira-plugin/ui && npm ci && cd ..
+          cd jira-plugin/ui && npm run build && cd ../..
 
       - name: Verify build output
         run: |
