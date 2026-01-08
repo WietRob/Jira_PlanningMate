@@ -18,6 +18,8 @@ on:
 env:
   NODE_VERSION: '20'
   FORGE_ENVIRONMENT: development
+  FORGE_ANALYTICS_OPT_IN: 'false'
+  CI: 'true'
 
 jobs:
   lint:
@@ -44,6 +46,7 @@ jobs:
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+          FORGE_ANALYTICS_OPT_IN: 'false'
 
   build:
     name: Build App
@@ -103,12 +106,14 @@ jobs:
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+          FORGE_ANALYTICS_OPT_IN: 'false'
 
       - name: Upgrade Installation
         run: forge install --upgrade all --environment=${{ env.FORGE_ENVIRONMENT }}
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+          FORGE_ANALYTICS_OPT_IN: 'false'
 
   test:
     name: Playwright Tests
@@ -181,6 +186,7 @@ jobs:
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+          FORGE_ANALYTICS_OPT_IN: 'false'
         continue-on-error: true
 
       - name: Check for Errors
@@ -196,6 +202,7 @@ jobs:
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
+          FORGE_ANALYTICS_OPT_IN: 'false'
 
   cleanup:
     name: Cleanup
