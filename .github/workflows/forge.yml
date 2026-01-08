@@ -43,8 +43,7 @@ jobs:
 
       - name: Build UI
         run: |
-          cd jira-plugin/ui && npm ci && cd ..
-          cd jira-plugin/ui && npm run build && cd ../..
+          cd jira-plugin/ui && npm ci --legacy-peer-deps && npm run build && cd ../..
 
       - name: Verify build output
         run: |
