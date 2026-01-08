@@ -75,13 +75,13 @@ jobs:
           echo '{"analytics": false}' > ~/.config/forge/config.json
 
       - name: Deploy to Forge
-        run: forge deploy --environment=${{ env.FORGE_ENVIRONMENT }}
+        run: echo "n" | forge deploy --environment=${{ env.FORGE_ENVIRONMENT }}
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
 
       - name: Upgrade Installation
-        run: forge install --upgrade all --environment=${{ env.FORGE_ENVIRONMENT }}
+        run: echo "n" | forge install --upgrade all --environment=${{ env.FORGE_ENVIRONMENT }}
         env:
           FORGE_EMAIL: ${{ secrets.FORGE_EMAIL }}
           FORGE_API_TOKEN: ${{ secrets.FORGE_API_TOKEN }}
