@@ -10,6 +10,7 @@
     "test:install": "playwright install --with-deps chromium",
     "auth:record": "npx playwright codegen https://robertoschmidt.atlassian.net --save-storage=playwright/.auth/state.json",
     "auth:encode": "base64 playwright/.auth/state.json",
+    "dev": "cd jira-plugin && npm run dev",
     "forge:lint": "cd jira-plugin && forge lint",
     "forge:deploy": "cd jira-plugin && forge deploy",
     "forge:install": "cd jira-plugin && forge install",

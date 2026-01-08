@@ -40,7 +40,7 @@ export default defineConfig({
   ],
   
   webServer: {
-    command: 'npm run dev',
+    command: 'cd jira-plugin && npm run dev',
     url: 'http://localhost:8080',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
